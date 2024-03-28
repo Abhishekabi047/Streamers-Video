@@ -9,4 +9,10 @@ type VideoRepo interface {
 	GetVideoById( string) (*models.Video,error)
 	ArchivedVideos( string) (bool,error)
 	FindArchivedVideos( int) ([]*models.Video,error)
+	CreateClipId(models.Clip)(bool,error)
+	FetchUserClips( int) ([]*models.Clip,error)
+	FetchAllClips() ([]*models.Clip,error)
+	GetClipById( string) (*models.Clip,error)
+	ArchivedClip( string) (bool,error)
+	FindArchivedClips( int) ([]*models.Clip,error)
 }

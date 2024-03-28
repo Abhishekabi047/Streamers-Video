@@ -111,3 +111,97 @@ func (c *VideoRepo) GetVideoById(videoId string) (*models.Video,error) {
 	}
 	return &video,nil
 }
+
+func (c *VideoRepo) CreateClipId(input models.Clip)(bool,error) {
+	clip:= &models.Clip{
+		S3_path: input.S3_path,
+		Title: input.Title,
+		Category: input.Category,
+		Views: 0,
+		UserId: input.UserId,
+		Clip_id: input.Clip_id,
+	}
+
+	if err :=c.DB.Create(clip).Error;err != nil{
+		return false,err
+	}
+	return true,nil
+}
+
+
+func(c *VideoRepo) FetchUserClips(userid int) ([]*models.Clip,error) {
+	var data []*models.Clip
+	if err := c.DB.Where("user_id=? AND blocked=?",userid,false).Find(&data).Error;err != nil{
+		return nil,err
+	}
+	if len(data) == 0{
+		log.Println("fetching empty array")
+		return []*models.Clip{},nil
+	}
+	return data,nil
+
+}
+
+
+func(c *VideoRepo) FetchAllClips() ([]*models.Clip,error) {
+	var data []*models.Clip
+
+	if err :=c.DB.Model(&models.Clip{}).Where("archived = ? AND blocked = ?",false,false).Find(&data).Error;err != nil{
+		return nil,err
+	}
+	if len(data) == 0{
+		log.Println("fetching empty array")
+		return []*models.Clip{},nil
+	}
+	return data,nil
+}
+
+
+func (c *VideoRepo) FindArchivedClips(userId int) ([]*models.Clip,error) {
+	var data []*models.Clip
+
+	if err :=c.DB.Model(&models.Clip{}).Where("user_id=? AND archived=?",userId,true).Find(&data).Error;err!= nil{
+		return nil,err
+	}
+	if len(data) == 0{
+		log.Println("fetching empty array")
+		return []*models.Clip{},nil
+	}
+	return data, nil
+}
+
+func (c *VideoRepo) ArchivedClip(clipId string) (bool,error) {
+	var clip models.Clip
+	if err :=c.DB.Where("clip_id=?",clipId).First(&clip).Error;err != nil{
+		return false,nil
+	}
+	clip.Archived=!clip.Archived
+	if err :=c.DB.Save(&clip).Error;err != nil{
+		return false,err
+	}
+	return true, nil
+}
+
+func (c *VideoRepo) GetClipById(clipId string) (*models.Clip,error) {
+	var clip models.Clip
+	if err:=c.DB.Where("clip_id=?",clipId).First(&clip).Error;err != nil{
+		if err == gorm.ErrRecordNotFound{
+			return nil,fmt.Errorf("clip not found")
+		}
+		return nil,err
+	}
+	clip.Views++
+	if err :=c.DB.Save(&clip).Error;err != nil{
+		log.Println("error in incrementing views")
+		return nil,err
+	}
+	view:=models.ClipViewer{
+		ClipId: clipId,
+		UserId: clip.UserId,
+		Timestamp: time.Now(),
+	}
+	if err := c.DB.Create(&view).Error;err != nil{
+		return nil,err
+	}
+	return &clip,nil
+}

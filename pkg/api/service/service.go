@@ -181,3 +181,159 @@ func (c *VideoServer) GetVideoById(ctx context.Context, input *video.GetVideoByI
 	}
 	return response, nil
 }
+
+
+func (c *VideoServer) UploadClip(stream video.VideoService_UploadClipServer) error {
+	var req models.Clip
+	var buffer bytes.Buffer
+
+	fileUID := uuid.New()
+	fileName := fileUID.String()
+	s3Path := "streamers_clip/" + fileName + ".mp4"
+
+	for {
+		uploadData, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		clipId := utils.GenerateUniqueString()
+
+		req = models.Clip{
+			Title:       uploadData.Title,
+			Category:    uploadData.Category,
+			UserId:      int(uploadData.UserId),
+			Clip_id:    clipId,
+		}
+		_, err = buffer.Write(uploadData.Data)
+		if err != nil {
+			return err
+		}
+	}
+	err := utils.UploadVideoToS3(buffer.Bytes(), s3Path)
+	if err != nil {
+		return err
+	}
+	req.S3_path = s3Path
+
+	_, err = c.Repo.CreateClipId(req)
+	if err != nil {
+		return err
+	}
+	return stream.SendAndClose(&video.UploadClipResponse{
+		Status:  http.StatusOK,
+		Message: "Video succesfully uploaded",
+		VideoId: req.Clip_id,
+	})
+
+}
+
+func (c *VideoServer) FindUserClip(ctx context.Context, input *video.FindUserClipRequest) (*video.FindUserClipResponse, error) {
+	res, err := c.Repo.FetchUserClips(int(input.Userid))
+	if err != nil {
+		return nil, err
+	}
+	data := make([]*video.FetchClip, len(res))
+	for i, v := range res {
+		data[i] = &video.FetchClip{
+			ClipId:     v.Clip_id,
+			S3Path:      v.S3_path,
+			OwnerId:     int32(v.UserId),
+			Title:       v.Title,
+			Views:       uint32(v.Views),
+			Archived:    v.Archived,
+			Blocked:     v.Blocked,
+		}
+	}
+	resp := &video.FindUserClipResponse{
+		Clips: data,
+	}
+	return resp, err
+}
+
+
+
+func (c *VideoServer) FindAllClip(ctx context.Context, input *video.FindAllClipRequest) (*video.FindAllClipResponse, error) {
+	res, err := c.Repo.FetchAllClips()
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]*video.FetchClip, len(res))
+	for i, v := range res {
+		data[i] = &video.FetchClip{
+			ClipId:     v.Clip_id,
+			S3Path:      v.S3_path,
+			OwnerId:     int32(v.UserId),
+			Title:       v.Title,
+			Category:    v.Category,
+			Views:       uint32(v.Views),
+			Archived:    v.Archived,
+			Blocked:     v.Blocked,
+		}
+	}
+	response := &video.FindAllClipResponse{
+		Clips: data,
+	}
+	return response, err
+}
+
+
+func (c *VideoServer) FindArchivedClipByUserId(ctx context.Context, input *video.FindArchivedClipByUserIdRequest) (*video.FindArchivedClipByUserIdResponse, error) {
+	res, err := c.Repo.FindArchivedClips(int(input.Userid))
+	if err != nil {
+		return nil, err
+	}
+	data := make([]*video.FetchClip, len(res))
+	for i, v := range res {
+		data[i] = &video.FetchClip{
+			ClipId:     v.Clip_id,
+			S3Path:      v.S3_path,
+			Title:       v.Title,
+			Archived:    v.Archived,
+			Views:       uint32(v.Views),
+			Blocked:     v.Blocked,
+			Category:    v.Category,
+			OwnerId:     int32(v.UserId),
+		}
+	}
+	response := &video.FindArchivedClipByUserIdResponse{
+		Clips: data,
+	}
+	return response, err
+
+}
+
+func (c *VideoServer) ArchiveClip(ctx context.Context, input *video.ArchiveClipRequest) (*video.ArchiveClipResponse, error) {
+
+	res, err := c.Repo.ArchivedClip(input.ClipId)
+	if err != nil {
+		return nil, err
+	}
+	response := &video.ArchiveClipResponse{
+		Status: res,
+	}
+	return response, err
+}
+
+
+func (c *VideoServer) GetClipById(ctx context.Context, input *video.GetClipByIdRequest) (*video.GetClipByIdResponse, error) {
+	res, err := c.Repo.GetClipById(input.ClipId)
+	if err != nil {
+		return nil, err
+	}
+	response := &video.GetClipByIdResponse{
+		ClipId:     res.Clip_id,
+		UserName:    res.UserName,
+		Archived:    res.Archived,
+		Blocked:     res.Blocked,
+		Title:       res.Title,
+		S3Path:      res.S3_path,
+		Views:       uint32(res.Views),
+		Category:    res.Category,
+	}
+	return response, nil
+}
