@@ -19,6 +19,8 @@ func InitDB(cfg *config.Config) (*gorm.DB,error) {
 	db.AutoMigrate(
 		&models.Video{},
 		&models.Viewer{},
+		&models.Clip{},
+		&models.ClipViewer{},
 	)
 	return db,err
 	}	

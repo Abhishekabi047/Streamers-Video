@@ -3,9 +3,11 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 	"video/pkg/models"
 	"video/pkg/pb/video"
 
@@ -182,7 +184,6 @@ func (c *VideoServer) GetVideoById(ctx context.Context, input *video.GetVideoByI
 	return response, nil
 }
 
-
 func (c *VideoServer) UploadClip(stream video.VideoService_UploadClipServer) error {
 	var req models.Clip
 	var buffer bytes.Buffer
@@ -190,6 +191,7 @@ func (c *VideoServer) UploadClip(stream video.VideoService_UploadClipServer) err
 	fileUID := uuid.New()
 	fileName := fileUID.String()
 	s3Path := "streamers_clip/" + fileName + ".mp4"
+	// var totalDuration time.Duration
 
 	for {
 		uploadData, err := stream.Recv()
@@ -203,18 +205,39 @@ func (c *VideoServer) UploadClip(stream video.VideoService_UploadClipServer) err
 		clipId := utils.GenerateUniqueString()
 
 		req = models.Clip{
-			Title:       uploadData.Title,
-			Category:    uploadData.Category,
-			UserId:      int(uploadData.UserId),
-			Clip_id:    clipId,
+			Title:    uploadData.Title,
+			Category: uploadData.Category,
+			UserId:   int(uploadData.UserId),
+			Clip_id:  clipId,
 		}
 		_, err = buffer.Write(uploadData.Data)
 		if err != nil {
 			return err
 		}
+
+		// chunkDuration,err:=utils.GetVideoDuration(uploadData.Data)
+		// if err != nil{
+		// 	return err
+		// }
+		// totalDuration += chunkDuration
+
+		// if totalDuration > time.Minute{
+		// 	return errors.New("video duration exceeds 1 minute")
+		// }
 	}
-	err := utils.UploadVideoToS3(buffer.Bytes(), s3Path)
+	chunkDuration, err := utils.GetVideoDuration(buffer.Bytes())
 	if err != nil {
+		return err
+	}
+	fmt.Println("Duration",chunkDuration)
+
+	// Optionally, validate duration
+	if chunkDuration > time.Minute {
+		return errors.New("video duration exceeds 1 minute")
+	}
+
+	err1 := utils.UploadVideoToS3(buffer.Bytes(), s3Path)
+	if err1 != nil {
 		return err
 	}
 	req.S3_path = s3Path
@@ -239,13 +262,13 @@ func (c *VideoServer) FindUserClip(ctx context.Context, input *video.FindUserCli
 	data := make([]*video.FetchClip, len(res))
 	for i, v := range res {
 		data[i] = &video.FetchClip{
-			ClipId:     v.Clip_id,
-			S3Path:      v.S3_path,
-			OwnerId:     int32(v.UserId),
-			Title:       v.Title,
-			Views:       uint32(v.Views),
-			Archived:    v.Archived,
-			Blocked:     v.Blocked,
+			ClipId:   v.Clip_id,
+			S3Path:   v.S3_path,
+			OwnerId:  int32(v.UserId),
+			Title:    v.Title,
+			Views:    uint32(v.Views),
+			Archived: v.Archived,
+			Blocked:  v.Blocked,
 		}
 	}
 	resp := &video.FindUserClipResponse{
@@ -253,8 +276,6 @@ func (c *VideoServer) FindUserClip(ctx context.Context, input *video.FindUserCli
 	}
 	return resp, err
 }
-
-
 
 func (c *VideoServer) FindAllClip(ctx context.Context, input *video.FindAllClipRequest) (*video.FindAllClipResponse, error) {
 	res, err := c.Repo.FetchAllClips()
@@ -265,14 +286,14 @@ func (c *VideoServer) FindAllClip(ctx context.Context, input *video.FindAllClipR
 	data := make([]*video.FetchClip, len(res))
 	for i, v := range res {
 		data[i] = &video.FetchClip{
-			ClipId:     v.Clip_id,
-			S3Path:      v.S3_path,
-			OwnerId:     int32(v.UserId),
-			Title:       v.Title,
-			Category:    v.Category,
-			Views:       uint32(v.Views),
-			Archived:    v.Archived,
-			Blocked:     v.Blocked,
+			ClipId:   v.Clip_id,
+			S3Path:   v.S3_path,
+			OwnerId:  int32(v.UserId),
+			Title:    v.Title,
+			Category: v.Category,
+			Views:    uint32(v.Views),
+			Archived: v.Archived,
+			Blocked:  v.Blocked,
 		}
 	}
 	response := &video.FindAllClipResponse{
@@ -280,7 +301,6 @@ func (c *VideoServer) FindAllClip(ctx context.Context, input *video.FindAllClipR
 	}
 	return response, err
 }
-
 
 func (c *VideoServer) FindArchivedClipByUserId(ctx context.Context, input *video.FindArchivedClipByUserIdRequest) (*video.FindArchivedClipByUserIdResponse, error) {
 	res, err := c.Repo.FindArchivedClips(int(input.Userid))
@@ -290,14 +310,14 @@ func (c *VideoServer) FindArchivedClipByUserId(ctx context.Context, input *video
 	data := make([]*video.FetchClip, len(res))
 	for i, v := range res {
 		data[i] = &video.FetchClip{
-			ClipId:     v.Clip_id,
-			S3Path:      v.S3_path,
-			Title:       v.Title,
-			Archived:    v.Archived,
-			Views:       uint32(v.Views),
-			Blocked:     v.Blocked,
-			Category:    v.Category,
-			OwnerId:     int32(v.UserId),
+			ClipId:   v.Clip_id,
+			S3Path:   v.S3_path,
+			Title:    v.Title,
+			Archived: v.Archived,
+			Views:    uint32(v.Views),
+			Blocked:  v.Blocked,
+			Category: v.Category,
+			OwnerId:  int32(v.UserId),
 		}
 	}
 	response := &video.FindArchivedClipByUserIdResponse{
@@ -319,21 +339,20 @@ func (c *VideoServer) ArchiveClip(ctx context.Context, input *video.ArchiveClipR
 	return response, err
 }
 
-
 func (c *VideoServer) GetClipById(ctx context.Context, input *video.GetClipByIdRequest) (*video.GetClipByIdResponse, error) {
 	res, err := c.Repo.GetClipById(input.ClipId)
 	if err != nil {
 		return nil, err
 	}
 	response := &video.GetClipByIdResponse{
-		ClipId:     res.Clip_id,
-		UserName:    res.UserName,
-		Archived:    res.Archived,
-		Blocked:     res.Blocked,
-		Title:       res.Title,
-		S3Path:      res.S3_path,
-		Views:       uint32(res.Views),
-		Category:    res.Category,
+		ClipId:   res.Clip_id,
+		UserName: res.UserName,
+		Archived: res.Archived,
+		Blocked:  res.Blocked,
+		Title:    res.Title,
+		S3Path:   res.S3_path,
+		Views:    uint32(res.Views),
+		Category: res.Category,
 	}
 	return response, nil
 }
